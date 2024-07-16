@@ -1,0 +1,2 @@
+// Shows database in a mongodb server.
+show dbs
