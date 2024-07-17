@@ -28,29 +28,33 @@ def count_calls(method: Callable) -> Callable:
     return wrapper
 
 
+def call_history(method: Callable) -> Callable:
+    key_inputs = method.__qualname__ + ":inputs"
+    key_outputs = method.__qualname__ + ":outputs"
+
+    @wraps(method)
+    def wrapper(self, *args, **kwargs):
+        self._redis.rpush(key_inputs, str(args))
+        output = method(self, *args, **kwargs)
+        self._redis.rpush(key_outputs, str(output))
+        return output
+
+    return wrapper
+
+
 class Cache:
     def __init__(self):
         self._redis = redis.Redis()
         self._redis.flushdb()
 
     @count_calls
+    @call_history
     def store(self, data: Union[str, bytes, int, float]) -> str:
         key = str(uuid.uuid4())
         if isinstance(data, (int, float)):
             data = str(data)
         self._redis.set(key, data)
         return key
-
-    """
-    1. In this exercise we create a get method that take a key string argument
-    and an optional Callable argument named fn. This callable will be used to
-    convert the data back to the desired format.
-
-    We conserve the original Redis.get behavior if the key does not exist.
-    Also, We implement 2 new methods:
-    get_str and get_int that will automatically
-    parametrize Cache.get with the correct conversion function.
-    """
 
     def get(self, key: str, fn: Optional[Callable]
             = None) -> Union[str, bytes, int, float, None]:
@@ -66,3 +70,13 @@ class Cache:
 
     def get_int(self, key: str) -> Optional[int]:
         return self.get(key, lambda d: int(d))
+
+    def get_call_history(self, method: Callable) -> dict:
+        key_inputs = method.__qualname__ + ":inputs"
+        key_outputs = method.__qualname__ + ":outputs"
+        inputs = self._redis.lrange(key_inputs, 0, -1)
+        outputs = self._redis.lrange(key_outputs, 0, -1)
+        return {
+            "inputs": inputs,
+            "outputs": outputs
+        }
